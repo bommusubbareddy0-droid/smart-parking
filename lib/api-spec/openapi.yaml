@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Parkly parking discovery, reservations, dashboards, and live entrance boards.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: parking
+    description: Parking discovery and details
+  - name: reservations
+    description: Driver reservations
+  - name: dashboards
+    description: Driver, owner, and platform summaries
+  - name: display
+    description: Public live guidance boards
+  - name: auth
+    description: Phone number verification
 paths:
   /healthz:
     get:
@@ -24,6 +34,235 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/phone/start:
+    post:
+      operationId: startPhoneVerification
+      tags: [auth]
+      summary: Send a one-time verification code by SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneNumberInput"
+      responses:
+        "202":
+          description: Verification request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneVerificationStarted"
+  /auth/phone/verify:
+    post:
+      operationId: verifyPhoneCode
+      tags: [auth]
+      summary: Verify a phone code and return a Clerk sign-in ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneCodeInput"
+      responses:
+        "200":
+          description: Phone number verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneSignInTicket"
+        "400":
+          description: Invalid or expired verification code
+  /parking/locations:
+    get:
+      operationId: listParkingLocations
+      tags: [parking]
+      summary: Search parking locations
+      parameters:
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: covered
+          in: query
+          schema:
+            type: boolean
+        - name: evCharging
+          in: query
+          schema:
+            type: boolean
+        - name: accessible
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Matching parking locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParkingLocation"
+  /parking/locations/{locationId}:
+    get:
+      operationId: getParkingLocation
+      tags: [parking]
+      summary: Get parking location details
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Parking location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParkingLocation"
+        "404":
+          description: Location not found
+  /reservations:
+    get:
+      operationId: listReservations
+      tags: [reservations]
+      summary: List the signed-in driver's reservations
+      responses:
+        "200":
+          description: Driver reservations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reservation"
+    post:
+      operationId: createReservation
+      tags: [reservations]
+      summary: Reserve an available bay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReservationInput"
+      responses:
+        "201":
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "409":
+          description: No suitable bay is currently available
+  /reservations/{reservationId}/cancel:
+    post:
+      operationId: cancelReservation
+      tags: [reservations]
+      summary: Cancel a reservation and release its bay
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated reservation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboards]
+      summary: Get the driver's reservation and savings summary
+      responses:
+        "200":
+          description: Driver summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /owner/locations:
+    get:
+      operationId: getOwnerLocations
+      tags: [dashboards]
+      summary: Get locations managed by the signed-in owner
+      responses:
+        "200":
+          description: Owner locations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParkingLocation"
+  /admin/summary:
+    get:
+      operationId: getAdminSummary
+      tags: [dashboards]
+      summary: Get platform booking and occupancy metrics
+      responses:
+        "200":
+          description: Platform summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSummary"
+  /display/{locationId}:
+    get:
+      operationId: getEntranceBoard
+      tags: [display]
+      summary: Get the public entrance board and current bay statuses
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Board snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntranceBoard"
+  /display/{locationId}/bays/{bayId}:
+    patch:
+      operationId: updateBayStatus
+      tags: [display]
+      summary: Update a bay status for an authorized owner
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bayId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BayStatusInput"
+      responses:
+        "200":
+          description: Updated bay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParkingBay"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +272,129 @@ components:
           type: string
       required:
         - status
+    ParkingLocation:
+      type: object
+      required: [id, name, address, city, country, latitude, longitude, rate, currency, rating, totalBays, freeBays, amenities, imageUrl, driveMinutes, walkMinutes, estimateOnly]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string }
+        city: { type: string }
+        country: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        description: { type: string }
+        rate: { type: number }
+        currency: { type: string }
+        rating: { type: number }
+        totalBays: { type: integer }
+        freeBays: { type: integer }
+        amenities:
+          type: array
+          items: { type: string }
+        imageUrl: { type: string }
+        driveMinutes: { type: integer }
+        walkMinutes: { type: integer }
+        estimateOnly: { type: boolean }
+    ParkingBay:
+      type: object
+      required: [id, level, code, type, status]
+      properties:
+        id: { type: string }
+        level: { type: string }
+        code: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [free, reserved, occupied, out_of_service] }
+    Reservation:
+      type: object
+      required: [id, locationId, locationName, address, city, arrivalAt, departureAt, status, amount, currency, passCode, bayCode]
+      properties:
+        id: { type: string }
+        locationId: { type: string }
+        locationName: { type: string }
+        address: { type: string }
+        city: { type: string }
+        arrivalAt: { type: string, format: date-time }
+        departureAt: { type: string, format: date-time }
+        status: { type: string, enum: [upcoming, active, completed, cancelled] }
+        amount: { type: number }
+        currency: { type: string }
+        passCode: { type: string }
+        bayCode: { type: string }
+    ReservationInput:
+      type: object
+      required: [locationId, arrivalAt, departureAt]
+      properties:
+        locationId: { type: string }
+        arrivalAt: { type: string, format: date-time }
+        departureAt: { type: string, format: date-time }
+        vehiclePlate: { type: string }
+    PhoneNumberInput:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber: { type: string, minLength: 8, maxLength: 20 }
+    PhoneCodeInput:
+      type: object
+      required: [phoneNumber, code]
+      properties:
+        phoneNumber: { type: string, minLength: 8, maxLength: 20 }
+        code: { type: string, minLength: 4, maxLength: 10 }
+    PhoneVerificationStarted:
+      type: object
+      required: [accepted, expiresInSeconds]
+      properties:
+        accepted: { type: boolean }
+        expiresInSeconds: { type: integer }
+    PhoneSignInTicket:
+      type: object
+      required: [ticket]
+      properties:
+        ticket: { type: string }
+    BayStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [free, reserved, occupied, out_of_service] }
+    DashboardSummary:
+      type: object
+      required: [upcomingCount, activeCount, completedCount, savings, nextReservation]
+      properties:
+        upcomingCount: { type: integer }
+        activeCount: { type: integer }
+        completedCount: { type: integer }
+        savings: { type: number }
+        nextReservation:
+          oneOf:
+            - $ref: "#/components/schemas/Reservation"
+            - type: "null"
+    AdminSummary:
+      type: object
+      required: [bookings, revenue, occupancy, locations, cities]
+      properties:
+        bookings: { type: integer }
+        revenue: { type: number }
+        occupancy: { type: number }
+        locations: { type: integer }
+        cities:
+          type: array
+          items:
+            type: object
+            required: [city, bookings]
+            properties:
+              city: { type: string }
+              bookings: { type: integer }
+    EntranceBoard:
+      type: object
+      required: [locationId, locationName, updatedAt, freeBays, totalBays, bays]
+      properties:
+        locationId: { type: string }
+        locationName: { type: string }
+        updatedAt: { type: string, format: date-time }
+        freeBays: { type: integer }
+        totalBays: { type: integer }
+        bays:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParkingBay"
 

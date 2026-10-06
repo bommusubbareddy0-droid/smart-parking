@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 40" role="img" aria-label="Parkly">
+  <rect x="1" y="4" width="32" height="32" rx="10" fill="#b8e14d"/>
+  <circle cx="17" cy="20" r="9" fill="none" stroke="#0b1528" stroke-width="2"/>
+  <circle cx="17" cy="20" r="3" fill="#0b1528"/>
+  <path d="M17 11v3M17 26v3M8 20h3M23 20h3" stroke="#0b1528" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="42" y="29" fill="#0b1528" font-family="DM Sans, sans-serif" font-size="26" font-weight="700" letter-spacing="-1.5">parkly</text>
+  <circle cx="111" cy="26" r="2" fill="#90ba36"/>
+</svg>
