@@ -1,0 +1,121 @@
+Build a complete, production-quality parking discovery and reservation web application called **Parkly**. It must be polished enough for a product-design or startup competition demo, and every visible interaction must work. Do not leave placeholder buttons, dead pages, fake forms, or console errors.
+
+## Required technology
+
+- Frontend: React, TypeScript, Vite, Tailwind CSS, Framer Motion, React Router, and Lucide icons.
+- Backend: Node.js, Express, TypeScript, Prisma ORM, PostgreSQL (use SQLite locally if PostgreSQL is not available).
+- Realtime: Socket.IO for availability and entrance-board updates.
+- Maps: create a provider layer. Use Google Maps Places + Directions when API keys are present; fall back to OpenStreetMap tiles plus OpenRouteService where possible; otherwise show a visually polished static fallback. Never expose unrestricted API keys.
+- Validation: Zod on client and server. Use a secure session/auth implementation and hashed passwords.
+- Testing: Vitest for unit tests and Playwright for the main end-to-end flow.
+
+The project must start from a single documented command, seed itself with data, and include a thorough README. Build the database, API, UI, and seed data—not only a static mockup.
+
+## Product purpose
+
+Parkly helps drivers find an actually available parking space near their destination, understand the full price and arrival time, reserve the space, receive navigation, and find their assigned bay through a public digital guidance board. The guidance boards must help drivers who do **not** use the app as well.
+
+## Design direction
+
+- Premium mobility brand—not a generic dashboard.
+- Visual palette: deep navy (#0B1528), warm off-white, lime green availability accent, amber reservation signal, coral occupied alert.
+- Editorial heading font paired with a highly legible body font. Strong hierarchy and generous whitespace.
+- Smooth, restrained 200–350ms motion; use Framer Motion for page transitions, card hover, modal entry, and filter changes. Respect `prefers-reduced-motion`.
+- Responsive, mobile-first, excellent desktop/tablet/mobile layouts.
+- WCAG-aware: semantic elements, keyboard navigation, focus states, labelled controls, high contrast, screen-reader announcements, no colour-only status communication.
+- Add skeletons, empty states, helpful validation messages, toast feedback, error boundaries, and retry states.
+
+## Main user journey
+
+1. A landing page explains the benefit and has a beautiful live availability preview.
+2. The user searches a destination (city, address, landmark, or venue), arrival date/time, duration, vehicle type, and parking needs.
+3. Offer a **Use my location** GPS control through browser geolocation. If denied, continue gracefully with manual search.
+4. Show a map and a synchronised list of nearby car parks. Each card shows name, address, distance, traffic-aware driving ETA, walk time, availability, hourly rate, total estimated cost, rating, opening hours, and amenities.
+5. Allow filters for price, walking distance, covered, EV charging, accessible bays, height clearance, security/CCTV, and 24/7 access. Allow sorting by best match, distance, lowest price, rating, and availability.
+6. Clicking a result opens details and a reservation flow with price breakdown, optional promo code, selection of arrival/departure, vehicle details, terms acknowledgement, and payment mock/Stripe test integration.
+7. When a reservation is confirmed, the reservation is atomically created and one bay becomes `reserved`. Display a QR/barcode pass, bay number when assigned, cancellation policy, and a direct **Navigate with Google Maps** button.
+8. The user dashboard shows upcoming reservations, active parking, past reservations, cancellation, invoice download, and pass download. Add a profile/settings page.
+
+## Maps and routing requirements
+
+- Use a destination autocomplete source. Support global city/address search through the configured map provider; do not pretend an offline dropdown contains every city.
+- Calculate real road distance and traffic-aware drive ETA using the selected provider when keys are configured. Clearly label estimates when using a fallback.
+- Use browser geolocation only after the user presses the GPS action; never request it on initial load.
+- Provide a map with clustered markers and selected-location routing. Provide a list-first usable fallback if mapping fails.
+- “Open in Google Maps” must create this kind of URL: `https://www.google.com/maps/dir/?api=1&origin=LAT,LNG&destination=LAT,LNG&travelmode=driving`.
+- Keep map secrets protected through environment variables and document setup in `.env.example`.
+
+## Public digital parking guidance boards (critical feature)
+
+Build a dedicated responsive **Entrance Board** display route such as `/display/:locationId`. It must be usable full-screen on a monitor/tablet at a car-park entrance and require no driver account.
+
+- Show location name, current time, connectivity state, total free-bay count, and levels A–D.
+- Show individual bays (for example A01–D08) using redundant status signals:
+  - Green + “FREE” = available
+  - Amber + “RESERVED” = booked and held for arrival
+  - Red + “OCCUPIED” = vehicle/sensor reports occupied
+  - Grey + “OUT OF SERVICE” = unavailable
+- Use large legible typography, high contrast, simple colour blocks, and optional arrow wayfinding to the closest available level.
+- Updates must arrive live through Socket.IO; animate status changes gently without confusing drivers.
+- Include a digital-signage kiosk mode that automatically returns to the board after inactivity and has no unnecessary browser-style UI.
+- Owner controls must allow manual bay-state updates, bulk availability updates, pricing updates, and a board preview.
+- Model the real integration boundary: bay sensors/cameras publish signed events to the API; API validates them and broadcasts only the canonical status to clients. Add a documented mock sensor simulator for the demo.
+
+## Auth and roles
+
+Provide fully functional demo auth pages and seed accounts:
+
+- Driver: `driver@parkly.demo` / `Demo123!`
+- Owner: `owner@parkly.demo` / `Demo123!`
+- Admin: `admin@parkly.demo` / `Demo123!`
+
+Role capabilities:
+
+- Driver: search, reserve, pay in test mode, manage own bookings.
+- Owner: manage only owned locations, spaces/bays, price, amenities, opening hours, availability, and live reservation queue.
+- Admin: platform analytics (bookings, revenue, occupancy, popular locations), users, locations, and audit log.
+
+## Data model
+
+Create Prisma models and migrations for:
+
+- User: id, name, email, passwordHash, role, phone, timestamps
+- Vehicle: id, userId, plateNumber, type, make, colour
+- ParkingLocation: id, ownerId, name, address, city, country, latitude, longitude, timezone, description, openingHours, rate, currency, amenities, rating
+- ParkingBay: id, locationId, level, code, type, status, sensorId, lastStatusAt
+- Reservation: id, userId, locationId, bayId, arrivalAt, departureAt, duration, status, quotedAmount, finalAmount, passCode, createdAt
+- Payment: id, reservationId, provider, providerReference, amount, currency, status
+- Review: id, userId, locationId, rating, comment, timestamps
+- SensorEvent/AuditEvent for hardware and admin traceability
+
+Use transactions and a server-side lock/check to prevent two users reserving the same bay. Expire unpaid holds after a short configured interval. Never trust availability from the client.
+
+## Seed data
+
+Seed at least 12 believable garages across Bengaluru, Mumbai, New Delhi, Hyderabad, Chennai, Kolkata, Pune, and Goa. Each needs 24–100 bays distributed across levels, varied amenities, photos/visual assets that are licensed or generated locally, different prices and opening hours, and realistic availability. Include several EV and accessible bays. Include booked, occupied, free, and out-of-service bays so the board is vivid immediately.
+
+## Pages and routes
+
+- `/` Landing/search page
+- `/search` Results list and map
+- `/parking/:id` Parking details and reserve action
+- `/checkout/:reservationId` Reservation/payment confirmation
+- `/dashboard` Driver dashboard
+- `/owner` Owner dashboard
+- `/admin` Admin dashboard
+- `/display/:locationId` Public entrance guidance board
+- `/login`, `/signup`, `/forgot-password`
+- `/privacy`, `/terms`, `/help`
+
+## Quality bar and acceptance checks
+
+- The complete happy path works: search → filter → view map/details → reserve → availability changes → board receives live amber bay → dashboard shows booking → cancellation frees bay and board changes green.
+- Test desktop and narrow mobile views. No horizontal overflow, clipped modals, inaccessible controls, broken images, or layout shifts.
+- All loading/error/empty states are designed.
+- Add API error handling, rate limiting on auth endpoints, secure CORS, environment validation, and basic logging.
+- Ensure `npm run lint`, `npm run test`, and the app build succeed. Include instructions and expected demo screenshots in the README.
+- End by showing a concise project tree, the demo URLs, credentials, environment variables needed for optional live maps/payments, and a checklist of every implemented feature.
+
+Make thoughtful product decisions and complete the implementation; do not stop at a plan or a single landing page.
+
+---

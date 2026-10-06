@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Parkly Parking"
+description = "A premium parking discovery and reservation app that helps drivers find, book, and navigate to available parking, with live entrance guidance boards and owner tools."
+version = "1.0.0"
+id = "artifacts/parkly"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25851
+
+[services.development]
+run = "pnpm --filter @workspace/parkly run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/parkly", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/parkly/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25851"
+BASE_PATH = "/"
