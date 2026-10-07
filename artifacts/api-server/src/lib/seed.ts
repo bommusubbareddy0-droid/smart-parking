@@ -181,9 +181,9 @@ export async function seedParklyData(): Promise<void> {
     await db
       .insert(usersTable)
       .values([
-        { id: "demo-driver", name: "Riya Mehta", email: "driver@parkly.demo", role: "driver" },
-        { id: "demo-owner", name: "Arjun Rao", email: "owner@parkly.demo", role: "owner" },
-        { id: "demo-admin", name: "Maya Kapoor", email: "admin@parkly.demo", role: "admin" },
+        { id: "demo-driver", name: "Riya Mehta", email: "driver@parklydemo.com", role: "driver" },
+        { id: "demo-owner", name: "Arjun Rao", email: "owner@parklydemo.com", role: "owner" },
+        { id: "demo-admin", name: "Maya Kapoor", email: "admin@parklydemo.com", role: "admin" },
       ])
       .onConflictDoNothing();
   }

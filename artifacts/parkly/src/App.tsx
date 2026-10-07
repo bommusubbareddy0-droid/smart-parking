@@ -32,6 +32,22 @@ const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
 if (!clerkPubKey) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
 const stripBase = (path: string) => basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path;
+const currentReturnPath = () => `${window.location.pathname}${window.location.search}${window.location.hash}`;
+const signInHref = (path = '/sign-in') => `${path}?redirect_url=${encodeURIComponent(currentReturnPath())}`;
+const safeAuthRedirect = () => {
+  const fallback = `${basePath}/dashboard` || '/dashboard';
+  const requested = new URLSearchParams(window.location.search).get('redirect_url');
+  if (!requested) return fallback;
+  try {
+    const target = new URL(requested, window.location.origin);
+    const inArtifact = !basePath || target.pathname === basePath || target.pathname.startsWith(`${basePath}/`);
+    const route = stripBase(target.pathname);
+    if (target.origin !== window.location.origin || !inArtifact || route.startsWith('/sign-in') || route.startsWith('/sign-up')) return fallback;
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return fallback;
+  }
+};
 
 const clerkAppearance = {
   theme: shadcn,
@@ -110,7 +126,7 @@ function Header() {
   return <header className="site-header">
     <div className="shell header-inner">
       <Brand />
-      <nav className={`header-nav ${mobile ? 'nav-open' : ''}`} aria-label="Main navigation">
+      <nav className={`header-nav ${mobile ? 'nav-open' : ''}`} aria-label="Main navigation" onClick={event => { if ((event.target as HTMLElement).closest('a')) setMobile(false); }}>
         <Link href="/search" data-testid="link-search-nav">Find parking</Link>
         {isSignedIn ? <>
           <Link href="/dashboard" data-testid="link-dashboard-nav">My passes</Link>
@@ -151,6 +167,19 @@ function Layout({ children, noFooter = false }: { children: ReactNode; noFooter?
   return <div className="app-frame parkly-grain"><Header /><main>{children}</main>{!noFooter && <Footer />}</div>;
 }
 
+function AccountGate({ children, role }: { children: ReactNode; role?: 'owner' | 'admin' }) {
+  const { isLoaded, isSignedIn, user } = useUser();
+  if (!isLoaded) return <Layout><LoadingState label="Checking your account" /></Layout>;
+  if (!isSignedIn) return <Layout><div className="shell account-gate"><div className="state-panel">
+    <div className="state-icon lime"><KeyRound size={21} /></div><h3>Sign in to continue</h3><p>Sign in to view your passes and manage parking reservations.</p>
+    <div className="account-gate-actions"><Link className="button button-dark" href={signInHref()}>Sign in or create an account</Link><Link className="button button-outline" href={signInHref('/sign-in/phone')}>Use your phone</Link></div>
+  </div></div></Layout>;
+  if (role && user?.publicMetadata.role !== role) return <Layout><div className="shell account-gate"><div className="state-panel">
+    <div className="state-icon coral"><ShieldCheck size={21} /></div><h3>This area is restricted</h3><p>Your account does not have {role} access.</p><Link className="button button-dark" href="/">Back to parking search</Link>
+  </div></div></Layout>;
+  return <>{children}</>;
+}
+
 function LoadingState({ label = 'Finding the right space' }: { label?: string }) {
   return <div className="shell state-wrap" role="status" data-testid="status-loading">
     <div className="skeleton skeleton-title" /><p>{label}…</p>
@@ -167,10 +196,12 @@ function EmptyState({ title, note }: { title: string; note: string }) {
   return <div className="state-panel" data-testid="status-empty"><div className="state-icon lime"><LocateFixed size={23} /></div><h3>{title}</h3><p>{note}</p></div>;
 }
 
-function SearchBar({ initialCity = '', compact = false, onSearch }: { initialCity?: string; compact?: boolean; onSearch?: (city: string, query: string) => void }) {
+function SearchBar({ initialCity = '', initialQuery = '', compact = false, onSearch }: { initialCity?: string; initialQuery?: string; compact?: boolean; onSearch?: (city: string, query: string) => void }) {
   const [, setLocation] = useLocation();
   const [city, setCity] = useState(initialCity);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
+  useEffect(() => { setCity(initialCity); }, [initialCity]);
+  useEffect(() => { setQuery(initialQuery); }, [initialQuery]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (onSearch) onSearch(city, query);
@@ -180,7 +211,7 @@ function SearchBar({ initialCity = '', compact = false, onSearch }: { initialCit
     <label className="search-field">
       <span className="search-icon"><MapPin size={19} /></span><span className="field-copy"><small>Where to?</small>
         <input aria-label="City or destination" placeholder="City or destination" value={city} onChange={e => setCity(e.target.value)} list="parkly-cities" data-testid="input-search-city" /></span>
-      <datalist id="parkly-cities"><option value="Mumbai" /><option value="Bengaluru" /><option value="Delhi" /><option value="Hyderabad" /><option value="Pune" /><option value="Chennai" /></datalist>
+      <datalist id="parkly-cities"><option value="Mumbai" /><option value="Bengaluru" /><option value="Delhi" /><option value="Hyderabad" /><option value="Pune" /><option value="Chennai" /><option value="Kolkata" /><option value="Goa" /></datalist>
     </label>
     <span className="search-divider" />
     <label className="search-field search-destination"><span className="search-icon"><Search size={18} /></span><span className="field-copy"><small>Near a place</small>
@@ -250,8 +281,8 @@ function MapResults({ locations, loading, error, retry }: { locations: ParkingLo
 }
 
 function LandingPage() {
-  const [city, setCity] = useState('');
-  const locationsQuery = useListParkingLocations({ city: city || undefined });
+  const locationsQuery = useListParkingLocations();
+  const [, setLocation] = useLocation();
   const locations = locationsQuery.data;
   const featured = locations?.slice(0, 3);
   return <Layout>
@@ -266,7 +297,7 @@ function LandingPage() {
         <div className="hero-search-card page-enter"><div className="search-card-top"><div><span className="eyebrow">YOUR NEXT STOP</span><h2>Where are you headed?</h2></div><span className="search-card-mark"><Navigation size={20} /></span></div>
           <SearchBar />
           <div className="popular-destinations"><span>Popular:</span>{['Mumbai', 'Bengaluru', 'Delhi'].map((name, index) =>
-            <button key={name} onClick={() => { setCity(name); }} data-testid={`button-popular-${name.toLowerCase()}`}>{name}{index < 2 && <span>·</span>}</button>)}</div>
+            <button key={name} onClick={() => setLocation(`/search?city=${encodeURIComponent(name)}`)} data-testid={`button-popular-${name.toLowerCase()}`}>{name}{index < 2 && <span>·</span>}</button>)}</div>
         </div>
         <div className="hero-caption mono-font">01 / A BETTER WAY TO PARK</div>
       </div>
@@ -307,7 +338,7 @@ function SearchPage() {
   const [covered, setCovered] = useState(false);
   const [ev, setEv] = useState(false);
   const [accessible, setAccessible] = useState(false);
-  const [view, setView] = useState<'list' | 'map'>('list');
+  const [view, setView] = useState<'list' | 'map'>(() => params.get('view') === 'map' ? 'map' : 'list');
   const [sort, setSort] = useState<'recommended' | 'price' | 'rating'>('recommended');
   const [locating, setLocating] = useState(false);
   const filters = useMemo(() => ({ city: city || undefined, q: query || undefined, covered: covered || undefined, evCharging: ev || undefined, accessible: accessible || undefined }), [city, query, covered, ev, accessible]);
@@ -327,14 +358,21 @@ function SearchPage() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       setLocating(false);
-      const candidates = allLocations.data ?? [];
+      const candidates = (allLocations.data ?? []).filter(location => location.freeBays > 0);
       if (!candidates.length) {
-        toast.error('Parking locations have not loaded yet. Try again in a moment.');
+        toast.error(allLocations.data?.length ? 'No open spaces are available in the listed locations right now.' : 'Parking locations have not loaded yet. Try again in a moment.');
         return;
       }
       const nearest = candidates.reduce((best, candidate) => {
-        const bestDistance = Math.hypot(best.latitude - coords.latitude, best.longitude - coords.longitude);
-        const candidateDistance = Math.hypot(candidate.latitude - coords.latitude, candidate.longitude - coords.longitude);
+        const radians = (degrees: number) => degrees * Math.PI / 180;
+        const distance = (latitude: number, longitude: number) => {
+          const dLat = radians(latitude - coords.latitude);
+          const dLng = radians(longitude - coords.longitude);
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(coords.latitude)) * Math.cos(radians(latitude)) * Math.sin(dLng / 2) ** 2;
+          return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        };
+        const bestDistance = distance(best.latitude, best.longitude);
+        const candidateDistance = distance(candidate.latitude, candidate.longitude);
         return candidateDistance < bestDistance ? candidate : best;
       });
       setCity(nearest.city);
@@ -347,7 +385,7 @@ function SearchPage() {
   };
   return <Layout><div className="shell search-page page-enter">
     <div className="search-page-head"><div><span className="eyebrow">FIND YOUR PARKING</span><h1>Good to <em>go.</em></h1><p>Real spaces, clear rates, your time back.</p></div><div className="search-count">{result.data?.length ?? '—'}<span>spaces</span></div></div>
-    <SearchBar compact initialCity={city} onSearch={(nextCity, nextQuery) => { setCity(nextCity); setQuery(nextQuery); }} />
+    <SearchBar compact initialCity={city} initialQuery={query} onSearch={(nextCity, nextQuery) => { setCity(nextCity); setQuery(nextQuery); }} />
     <div className="filter-row"><span className="filter-label"><SlidersHorizontal size={15} /> Refine:</span>
       <FilterToggle checked={covered} onChange={setCovered} label="Covered" testId="toggle-covered" />
       <FilterToggle checked={ev} onChange={setEv} label="EV charging" testId="toggle-ev" />
@@ -369,15 +407,25 @@ function ParkingDetailPage() {
   const { locationId = '' } = useParams<{ locationId: string }>();
   const locationQuery = useGetParkingLocation(locationId);
   const location = locationQuery.data;
+  const { isSignedIn } = useUser();
   const [, setLocation] = useLocation();
   const [arrival, setArrival] = useState('');
   const [departure, setDeparture] = useState('');
   const [plate, setPlate] = useState('');
+  const minDateTime = useMemo(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  }, []);
   const client = useQueryClient();
   const create = useCreateReservation();
   const reserve = () => {
+    if (!isSignedIn) {
+      setLocation(signInHref());
+      return;
+    }
     if (!location) return;
-    if (!arrival || !departure || new Date(departure) <= new Date(arrival)) { toast.error('Choose a valid arrival and departure window.'); return; }
+    if (!arrival || !departure || new Date(arrival).getTime() <= Date.now() || new Date(departure) <= new Date(arrival)) { toast.error('Choose an arrival after now and a later departure.'); return; }
     create.mutate({ data: { locationId: location.id, arrivalAt: new Date(arrival).toISOString(), departureAt: new Date(departure).toISOString(), ...(plate ? { vehiclePlate: plate } : {}) } }, {
       onSuccess: async reservation => {
         await Promise.all([client.invalidateQueries({ queryKey: getListReservationsQueryKey() }), client.invalidateQueries({ queryKey: getListParkingLocationsQueryKey() })]);
@@ -408,14 +456,14 @@ function ParkingDetailPage() {
       <aside className="booking-card">
         <div className="booking-price"><strong>{money(location.rate, location.currency)}</strong><span>per hour</span></div>
         <div className="booking-live"><span className="live-dot" /><b>{location.freeBays} bays available now</b></div>
-        <div className="booking-fields"><label>Arrival<input type="datetime-local" value={arrival} onChange={e => setArrival(e.target.value)} data-testid="input-arrival-time" /></label>
-          <label>Departure<input type="datetime-local" value={departure} onChange={e => setDeparture(e.target.value)} data-testid="input-departure-time" /></label>
+        <div className="booking-fields"><label>Arrival<input type="datetime-local" min={minDateTime} value={arrival} onChange={e => setArrival(e.target.value)} data-testid="input-arrival-time" /></label>
+          <label>Departure<input type="datetime-local" min={arrival || minDateTime} value={departure} onChange={e => setDeparture(e.target.value)} data-testid="input-departure-time" /></label>
           <label>Vehicle plate <span className="optional">Optional</span><input value={plate} onChange={e => setPlate(e.target.value)} placeholder="e.g. KA 03 AB 1234" data-testid="input-vehicle-plate" /></label>
         </div>
         <button className="button button-lime booking-button" disabled={create.isPending || location.freeBays <= 0} onClick={reserve} data-testid="button-reserve-space">
-          {create.isPending ? 'Holding your bay…' : location.freeBays <= 0 ? 'No spaces available' : <>Reserve this space <ArrowRight size={17} /></>}
+          {create.isPending ? 'Holding your bay…' : location.freeBays <= 0 ? 'No spaces available' : !isSignedIn ? <>Sign in to reserve <ArrowRight size={17} /></> : <>Reserve this space <ArrowRight size={17} /></>}
         </button>
-        <p className="booking-note"><ShieldCheck size={14} /> You’ll see the full total before confirming.</p>
+         <p className="booking-note"><ShieldCheck size={14} /> Preview mode: no payment is collected.</p>
         {create.isError && <p role="alert" className="inline-error" data-testid="status-reservation-error">Reservation could not be completed. Please try again.</p>}
       </aside>
     </div>
@@ -439,7 +487,7 @@ function PassConfirmation({ reservation }: { reservation: Reservation }) {
       <div className="pass-head"><div><span className="eyebrow">PARKLY ARRIVAL PASS</span><h2>{reservation.locationName}</h2><p>{reservation.address}, {reservation.city}</p></div><span className="pass-status"><CheckCircle2 size={15} /> Confirmed</span></div>
       <div className="pass-dates"><div><span>ARRIVE</span><strong>{dateTime(reservation.arrivalAt)}</strong></div><ArrowRight size={18} /><div><span>LEAVE BY</span><strong>{dateTime(reservation.departureAt)}</strong></div></div>
       <div className="pass-code-area"><div><span className="eyebrow">YOUR BAY</span><strong className="bay-code">{reservation.bayCode}</strong></div><div className="pass-code"><span>ENTRY CODE</span><strong>{reservation.passCode}</strong></div></div>
-      <div className="pass-foot"><span><CreditCard size={15} /> {money(reservation.amount, reservation.currency)} paid</span><span>Keep this pass handy on arrival</span></div>
+       <div className="pass-foot"><span><CreditCard size={15} /> {money(reservation.amount, reservation.currency)} reservation total</span><span>Preview only · no payment was collected</span></div>
     </article>
     <div className="checkout-actions"><Link href="/dashboard" className="button button-dark" data-testid="link-view-pass-dashboard"><TicketCheck size={17} /> View all passes</Link><Link href={`/display/${reservation.locationId}`} className="button button-outline" data-testid="link-view-entrance-board">See entrance board <ExternalLink size={15} /></Link></div>
   </div>;
@@ -487,7 +535,7 @@ function ReservationRow({ item, confirming, pending, onConfirm, onCancel }: { it
     <div className="reservation-date"><strong>{new Date(item.arrivalAt).getDate()}</strong><span>{new Intl.DateTimeFormat('en-IN', { month: 'short' }).format(new Date(item.arrivalAt))}</span></div>
     <div className="reservation-info"><span className={`reservation-status ${statusClass}`} data-testid={`status-reservation-${item.id}`}>{item.status.replace('_', ' ')}</span><h3>{item.locationName}</h3><p>{item.address}, {item.city}</p><span className="reservation-time">{dateTime(item.arrivalAt)} <span>→</span> {dateOnly(item.departureAt)}</span></div>
     <div className="reservation-side"><strong>{money(item.amount, item.currency)}</strong><span>Bay {item.bayCode}</span>
-      <div className="reservation-actions">{item.status !== 'cancelled' && item.status !== 'completed' && (confirming ?
+      <div className="reservation-actions">{item.status === 'upcoming' && (confirming ?
         <><button className="button button-coral button-small" disabled={pending} onClick={onConfirm} data-testid={`button-confirm-cancel-${item.id}`}>{pending ? 'Cancelling…' : 'Confirm cancel'}</button><button className="cancel-link" onClick={onCancel} data-testid={`button-keep-reservation-${item.id}`}>Keep</button></> :
         <button className="cancel-link" onClick={onCancel} data-testid={`button-cancel-reservation-${item.id}`}>Cancel</button>)}
         <Link href={`/checkout/${item.id}`} className="pass-open" data-testid={`link-open-reservation-${item.id}`}>Pass <ChevronRight size={14} /></Link></div>
@@ -616,17 +664,35 @@ function PhoneSignInPage() {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const [formError, setFormError] = useState('');
   const startVerification = useStartPhoneVerification();
   const verifyCode = useVerifyPhoneCode();
   const { signIn, isLoaded, setActive } = useSignIn();
+  const [, setLocation] = useLocation();
   const normalizedPhone = phone.replace(/[^\d+]/g, '');
-  const start = (event: FormEvent) => {
-    event.preventDefault(); setFormError('');
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown(value => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+  const requestCode = () => {
+    setFormError('');
+    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
+      setFormError('Enter a phone number with its country code, such as +91 98765 43210.');
+      return;
+    }
     startVerification.mutate({ data: { phoneNumber: normalizedPhone } }, {
-      onSuccess: result => { if (result.accepted) setSent(true); else setFormError('We couldn’t send a code to that number. Check it and try again.'); },
+      onSuccess: result => {
+        if (result.accepted) { setSent(true); setCooldown(60); }
+        else setFormError('We couldn’t send a code to that number. Check it and try again.');
+      },
       onError: () => setFormError('We couldn’t send a code just now. Please try again.'),
     });
+  };
+  const start = (event: FormEvent) => {
+    event.preventDefault();
+    requestCode();
   };
   const verify = (event: FormEvent) => {
     event.preventDefault(); setFormError('');
@@ -635,7 +701,10 @@ function PhoneSignInPage() {
         try {
           if (!isLoaded || !signIn || !setActive) { setFormError('Sign-in is still loading. Try again in a moment.'); return; }
           const result = await signIn.create({ strategy: 'ticket', ticket: ticket.ticket });
-          if (result.createdSessionId) await setActive({ session: result.createdSessionId });
+           if (result.createdSessionId) {
+             await setActive({ session: result.createdSessionId });
+             setLocation(stripBase(safeAuthRedirect()));
+           }
           else setFormError('Your code was accepted, but this session could not be opened.');
         } catch { setFormError('That code may have expired. Request a new one and try again.'); }
       },
@@ -648,24 +717,26 @@ function PhoneSignInPage() {
     <p className="auth-copy">{sent ? `We sent a one-time code to ${phone}.` : 'We’ll text you a one-time code. No password to remember.'}</p>
     {!sent ? <form onSubmit={start} className="phone-form"><label>Phone number<input type="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 98765 43210" minLength={8} maxLength={20} required data-testid="input-phone-number" /></label>
       <button className="button button-lime auth-submit" disabled={startVerification.isPending} data-testid="button-send-otp">{startVerification.isPending ? 'Sending code…' : <>Send one-time code <ArrowRight size={17} /></>}</button></form> :
-      <form onSubmit={verify} className="phone-form"><label>Verification code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} placeholder="Enter the code from your text" minLength={4} maxLength={10} required data-testid="input-phone-otp" /></label>
+      <form onSubmit={verify} className="phone-form"><label>Verification code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Enter the 6-digit code" minLength={6} maxLength={6} pattern="[0-9]{6}" required data-testid="input-phone-otp" /></label>
         <button className="button button-lime auth-submit" disabled={verifyCode.isPending} data-testid="button-verify-otp">{verifyCode.isPending ? 'Checking code…' : <>Verify and continue <ArrowRight size={17} /></>}</button>
-        <button type="button" className="cancel-link resend-code" onClick={() => { setSent(false); setCode(''); }} data-testid="button-change-phone">Use a different number</button></form>}
+        <div className="phone-secondary-actions"><button type="button" className="cancel-link resend-code" disabled={cooldown > 0 || startVerification.isPending} onClick={() => { setCode(''); requestCode(); }} data-testid="button-resend-code">{cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}</button><button type="button" className="cancel-link resend-code" onClick={() => { setSent(false); setCode(''); setCooldown(0); }} data-testid="button-change-phone">Use a different number</button></div></form>}
     {formError && <p className="inline-error" role="alert" data-testid="status-phone-error">{formError}</p>}
-    <div className="auth-divider"><span>or use your account</span></div><Link className="button button-outline auth-account-button" href="/sign-in" data-testid="link-normal-sign-in">Continue with Google or email <ChevronRight size={16} /></Link>
+     <div className="auth-divider"><span>or use your account</span></div><Link className="button button-outline auth-account-button" href={`/sign-in?redirect_url=${encodeURIComponent(safeAuthRedirect())}`} data-testid="link-normal-sign-in">Continue with Google or email <ChevronRight size={16} /></Link>
     <p className="auth-legal">By continuing, you agree to our <Link href="/terms" data-testid="link-phone-terms">Terms</Link> and <Link href="/privacy" data-testid="link-phone-privacy">Privacy Policy</Link>.</p>
   </div><div className="auth-side-note"><span className="auth-note-mark"><KeyRound size={20} /></span><span>One small step.<br /><strong>A much smoother arrival.</strong></span></div></section></Layout>;
 }
 function ClerkSignInPage() {
-  return <div className="clerk-page"><div className="clerk-context"><Brand /><span className="eyebrow">PARKING, WITHOUT THE GUESSWORK</span><h1>Know where<br />you’re going.</h1><p>Sign in to keep your passes, plans, and parking details close.</p><Link className="phone-auth-link" href="/sign-in/phone" data-testid="link-phone-sign-in"><Phone size={16} /> Use a phone number instead <ArrowRight size={15} /></Link>
-    <div className="demo-access"><span>PREVIEW ACCOUNTS</span><p>Driver · driver@parkly.demo<br />Owner · owner@parkly.demo<br />Admin · admin@parkly.demo</p><small>Password for all: <code>Demo123!</code></small></div>
+  const redirectUrl = safeAuthRedirect();
+  return <div className="clerk-page"><div className="clerk-context"><Brand /><span className="eyebrow">PARKING, WITHOUT THE GUESSWORK</span><h1>Know where<br />you’re going.</h1><p>Sign in to keep your passes, plans, and parking details close.</p><Link className="phone-auth-link" href={`/sign-in/phone?redirect_url=${encodeURIComponent(redirectUrl)}`} data-testid="link-phone-sign-in"><Phone size={16} /> Use a phone number instead <ArrowRight size={15} /></Link>
+    {import.meta.env.DEV && <div className="demo-access"><span>PREVIEW ACCOUNTS</span><p>Driver · driver@parklydemo.com<br />Owner · owner@parklydemo.com<br />Admin · admin@parklydemo.com</p><small>Password for all: <code>ParklyDemo2026!</code></small></div>}
   </div>
-    <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+    <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`} forceRedirectUrl={redirectUrl} />
   </div>;
 }
 function ClerkSignUpPage() {
-  return <div className="clerk-page signup-clerk"><div className="clerk-context"><Brand /><span className="eyebrow">MORE TIME FOR THE REASON YOU’RE GOING</span><h1>Your next<br />stop, sorted.</h1><p>Create your Parkly account and make parking part of the plan.</p><Link className="phone-auth-link" href="/sign-in/phone" data-testid="link-phone-sign-up">Already have an account? Sign in by phone <ArrowRight size={15} /></Link></div>
-    <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+  const redirectUrl = safeAuthRedirect();
+  return <div className="clerk-page signup-clerk"><div className="clerk-context"><Brand /><span className="eyebrow">MORE TIME FOR THE REASON YOU’RE GOING</span><h1>Your next<br />stop, sorted.</h1><p>Create your Parkly account and make parking part of the plan.</p><Link className="phone-auth-link" href={`/sign-in/phone?redirect_url=${encodeURIComponent(redirectUrl)}`} data-testid="link-phone-sign-up">Already have an account? Sign in by phone <ArrowRight size={15} /></Link></div>
+    <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in?redirect_url=${encodeURIComponent(redirectUrl)}`} forceRedirectUrl={redirectUrl} />
   </div>;
 }
 
@@ -694,6 +765,11 @@ function InformationPage({ page }: { page: 'help' | 'privacy' | 'terms' }) {
   </section></Layout>;
 }
 
+function ProtectedCheckoutPage() { return <AccountGate><CheckoutPage /></AccountGate>; }
+function ProtectedDashboardPage() { return <AccountGate><DashboardPage /></AccountGate>; }
+function ProtectedOwnerPage() { return <AccountGate role="owner"><OwnerPage /></AccountGate>; }
+function ProtectedAdminPage() { return <AccountGate role="admin"><AdminPage /></AccountGate>; }
+
 function ClerkRoutes() {
   const [, setLocation] = useLocation();
   return <ClerkProvider
@@ -712,10 +788,10 @@ function ClerkRoutes() {
         <Route path="/" component={LandingPage} />
         <Route path="/search" component={SearchPage} />
         <Route path="/parking/:locationId" component={ParkingDetailPage} />
-        <Route path="/checkout/:reservationId" component={CheckoutPage} />
-        <Route path="/dashboard" component={DashboardPage} />
-        <Route path="/owner" component={OwnerPage} />
-        <Route path="/admin" component={AdminPage} />
+        <Route path="/checkout/:reservationId" component={ProtectedCheckoutPage} />
+        <Route path="/dashboard" component={ProtectedDashboardPage} />
+        <Route path="/owner" component={ProtectedOwnerPage} />
+        <Route path="/admin" component={ProtectedAdminPage} />
         <Route path="/display/:locationId" component={EntranceBoardPage} />
         <Route path="/sign-in/phone" component={PhoneSignInPage} />
         <Route path="/sign-in/*?" component={ClerkSignInPage} />

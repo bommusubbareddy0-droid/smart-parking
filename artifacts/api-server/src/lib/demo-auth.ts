@@ -6,19 +6,19 @@ import { logger } from "./logger";
 
 const demoAccounts = [
   {
-    email: "driver@parkly.demo",
+    email: "driver@parklydemo.com",
     firstName: "Riya",
     lastName: "Mehta",
     role: "driver",
   },
   {
-    email: "owner@parkly.demo",
+    email: "owner@parklydemo.com",
     firstName: "Arjun",
     lastName: "Rao",
     role: "owner",
   },
   {
-    email: "admin@parkly.demo",
+    email: "admin@parklydemo.com",
     firstName: "Maya",
     lastName: "Kapoor",
     role: "admin",
@@ -38,11 +38,21 @@ export async function ensureDemoAuthAccounts(): Promise<void> {
         existing.data[0] ??
         (await clerkClient.users.createUser({
           emailAddress: [demo.email],
-          password: "Demo123!",
+          password: "ParklyDemo2026!",
           firstName: demo.firstName,
           lastName: demo.lastName,
           publicMetadata: { role: demo.role },
         }));
+
+      const emailAddress = user.emailAddresses.find(
+        (address) => address.emailAddress === demo.email,
+      );
+      if (emailAddress) {
+        await clerkClient.emailAddresses.updateEmailAddress(emailAddress.id, {
+          verified: true,
+          primary: true,
+        });
+      }
 
       if (user.publicMetadata.role !== demo.role) {
         await clerkClient.users.updateUserMetadata(user.id, {

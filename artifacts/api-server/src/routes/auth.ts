@@ -170,14 +170,30 @@ router.post("/auth/phone/verify", async (req, res): Promise<void> => {
       firstName: "Parkly Driver",
       publicMetadata: { role: "driver" },
     }));
+  const verifiedPhone = user.phoneNumbers.find(
+    (number) => number.phoneNumber === phoneNumber,
+  );
+  if (!verifiedPhone) {
+    res.status(503).json({ error: "Your phone number could not be linked to this account. Please try again." });
+    return;
+  }
+  await clerkClient.phoneNumbers.updatePhoneNumber(verifiedPhone.id, {
+    verified: true,
+    primary: true,
+  });
   const signInToken = await clerkClient.signInTokens.createSignInToken({
     userId: user.id,
     expiresInSeconds: 60,
   });
-  await db
+  const [consumed] = await db
     .update(phoneChallengesTable)
     .set({ consumedAt: new Date() })
-    .where(eq(phoneChallengesTable.id, challenge.id));
+    .where(and(eq(phoneChallengesTable.id, challenge.id), isNull(phoneChallengesTable.consumedAt)))
+    .returning({ id: phoneChallengesTable.id });
+  if (!consumed) {
+    res.status(409).json({ error: "This code was already used. Request a new one." });
+    return;
+  }
   res.json(VerifyPhoneCodeResponse.parse({ ticket: signInToken.token }));
 });
 

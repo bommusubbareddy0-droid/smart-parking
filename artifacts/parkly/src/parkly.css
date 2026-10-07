@@ -346,6 +346,11 @@
 .phone-form input { height: 47px; }
 .auth-submit { width: 100%; }
 .resend-code { justify-self: start; }
+.phone-secondary-actions { display: flex; flex-wrap: wrap; gap: 14px; }
+.phone-secondary-actions button:disabled { cursor: not-allowed; opacity: .48; }
+.account-gate { padding-block: 40px; }
+.account-gate .state-panel { width: min(100%, 660px); }
+.account-gate-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
 .auth-divider { display: flex; align-items: center; gap: 11px; margin: 21px 0 15px; color: #8a9097; font-size: 9px; }
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: #e4e0d7; }
 .auth-account-button { width: 100%; min-height: 43px; font-size: 10px; }
@@ -569,7 +574,7 @@
   .clerk-context p { margin: 8px 0; font-size: 11px; }
   .clerk-context > .eyebrow { font-size: 8px; }
   .phone-auth-link { margin-top: 6px; font-size: 10px; }
-  .clerk-page > .cl-rootBox, .clerk-page > div:last-child { justify-self: center; }
+  .clerk-page > div:last-child { justify-self: center; }
   .info-page { min-height: 530px; padding-block: 27px 65px; }
   .info-page h1 { font-size: 40px; }
   .info-copy p { font-size: 12px; }
